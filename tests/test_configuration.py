@@ -10,12 +10,13 @@ from jsonschema import ValidationError
 
 from freqtrade.commands import Arguments
 from freqtrade.configuration import Configuration, validate_config_consistency
+from freqtrade.configuration.config_secrets import sanitize_config
 from freqtrade.configuration.config_validation import validate_config_schema
 from freqtrade.configuration.deprecated_settings import (check_conflicting_settings,
                                                          process_deprecated_setting,
                                                          process_removed_setting,
                                                          process_temporary_deprecated_settings)
-from freqtrade.configuration.environment_vars import flat_vars_to_nested_dict
+from freqtrade.configuration.environment_vars import _flat_vars_to_nested_dict
 from freqtrade.configuration.load_config import (load_config_file, load_file, load_from_files,
                                                  log_config_error_range)
 from freqtrade.constants import DEFAULT_DB_DRYRUN_URL, DEFAULT_DB_PROD_URL, ENV_VAR_PREFIX
@@ -1419,14 +1420,14 @@ def test_flat_vars_to_nested_dict(caplog):
             'chat_id': '2151'
         }
     }
-    res = flat_vars_to_nested_dict(test_args, ENV_VAR_PREFIX)
+    res = _flat_vars_to_nested_dict(test_args, ENV_VAR_PREFIX)
     assert res == expected
 
     assert log_has("Loading variable 'FREQTRADE__EXCHANGE__SOME_SETTING'", caplog)
     assert not log_has("Loading variable 'NOT_RELEVANT'", caplog)
 
 
-def test_setup_hyperopt_freqai(mocker, default_conf, caplog) -> None:
+def test_setup_hyperopt_freqai(mocker, default_conf) -> None:
     patched_configuration_load_config_file(mocker, default_conf)
     mocker.patch(
         'freqtrade.configuration.configuration.create_datadir',
@@ -1459,7 +1460,7 @@ def test_setup_hyperopt_freqai(mocker, default_conf, caplog) -> None:
         validate_config_consistency(config)
 
 
-def test_setup_freqai_backtesting(mocker, default_conf, caplog) -> None:
+def test_setup_freqai_backtesting(mocker, default_conf) -> None:
     patched_configuration_load_config_file(mocker, default_conf)
     mocker.patch(
         'freqtrade.configuration.configuration.create_datadir',
@@ -1506,3 +1507,17 @@ def test_setup_freqai_backtesting(mocker, default_conf, caplog) -> None:
         OperationalException, match=r".* pass --timerange if you intend to use FreqAI .*"
     ):
         validate_config_consistency(conf)
+
+
+def test_sanitize_config(default_conf_usdt):
+    assert default_conf_usdt['exchange']['key'] != 'REDACTED'
+    res = sanitize_config(default_conf_usdt)
+    # Didn't modify original dict
+    assert default_conf_usdt['exchange']['key'] != 'REDACTED'
+
+    assert res['exchange']['key'] == 'REDACTED'
+    assert res['exchange']['secret'] == 'REDACTED'
+
+    res = sanitize_config(default_conf_usdt, show_sensitive=True)
+    assert res['exchange']['key'] == default_conf_usdt['exchange']['key']
+    assert res['exchange']['secret'] == default_conf_usdt['exchange']['secret']
